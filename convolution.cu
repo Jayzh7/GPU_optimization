@@ -17,7 +17,11 @@ z: 64
 1280
 12544
 */
-__global__ void matrixMul(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h, int i_d, int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group) {
+__global__ void gpu_dummy(){
+
+}
+
+__global__ void gpu_conv_1(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h, int i_d, int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group) {
     
     unsigned int m = blockIdx.y*blockDim.y + threadIdx.y;
     unsigned int n = blockIdx.x*blockDim.x + threadIdx.x;
@@ -72,16 +76,16 @@ __global__ void matrixMul(float * img, float * weight, float * out, int i_w, int
     // out[o*o_w*o_h + m*o_w + n] = result;
 }
     
-__global__ void gpu_conv(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h,  int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group, int o_d, int i_d) {
-    g = blockIdx.y;
-    o = g*(o_d/group)+blockIdx.x;
+__global__ void gpu_conv_2(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h, int Kx, int Ky, int Sx, int Sy, int group, int o_d, int i_d) {
+    unsigned int g = blockIdx.y;
+    unsigned int o = g*(o_d/group)+blockIdx.x;
     // i = g*(i_d/group)+blockIdx.x;
 
     int m = threadIdx.y;
     int n = threadIdx.x;
 
     // for( o=g*(o_d/group);o<(g+1)*(o_d/group);o++) 
-        for( i=g*(i_d/group);i<(g+1)*(i_d/group);i++) 
+        for(int i=g*(i_d/group);i<(g+1)*(i_d/group);i++) 
             if (Kx == 1) {
                 out[o*o_w*o_h + m*o_w + n] +=
                     img[i*i_h*i_w + (m*Sy)*i_w + n*Sx] * 
@@ -185,6 +189,7 @@ float* load_1d(const char* fname, size_t num){
 //convolution, NOTE: destructive of BLOB* in. duplicate if further required!
 BLOB* convolution(BLOB* input, conv_param_t* p){
 
+    gpu_dummy<<<1,1>>>();
     //use local pointer
     BLOB* in = input;
 
@@ -243,7 +248,7 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
         for( g=0;g<p->group;g++) {
             for( o=g*(out->d/p->group);o<(g+1)*(out->d/p->group);o++) {
                 for( i=g*(in->d/p->group);i<(g+1)*(in->d/p->group);i++) {
-                    matrixMul<<<grid, block>>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, in->d, g, o, i, Kx, Ky, p->Sx, p->Sy, p->group);
+                    gpu_conv_1 <<<grid, block>>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, in->d, g, o, i, Kx, Ky, p->Sx, p->Sy, p->group);
                 }
             }
         }
@@ -252,9 +257,8 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
         // grid = dim3(in->d/p->group, out->d/p->group, p->group);
         block = dim3(out->w, out->h);
         grid = dim3(out->d/p->group, p->group);
-        int o, g, i;
         // for( g=0;g<p->group;g++) {/
-            gpu_conv <<< grid, block >>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, g, o, i, Kx, Ky, p->Sx, p->Sy, p->group, out->d, in->d);
+            gpu_conv_2 <<< grid, block >>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, Kx, Ky, p->Sx, p->Sy, p->group, out->d, in->d);
         // }
     }
 
