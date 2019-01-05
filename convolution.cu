@@ -27,13 +27,46 @@ __global__ void matrixMul(float * img, float * weight, float * out, int i_w, int
 
 //    __syncthreads();
 
-    for(int k = 0; k < Ky; k++) 
-        for(int l = 0; l < Kx; l++)
-            //  result += 
-            out[o*o_w*o_h + m*o_w + n] +=
-                img[i*i_h*i_w + (m*Sy+k)*i_w + n*Sx+l] * 
-                weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + k*Kx + l];
+    // for(int k = 0; k < Ky; k++) 
+    //     for(int l = 0; l < Kx; l++)
+    //         //  result += 
+    //         out[o*o_w*o_h + m*o_w + n] +=
+    //             img[i*i_h*i_w + (m*Sy+k)*i_w + n*Sx+l] * 
+    //             weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + k*Kx + l];
     
+    if (Kx == 1) {
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy)*i_w + n*Sx] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w];
+    } else {
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy)*i_w + n*Sx] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy)*i_w + n*Sx+1] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 1];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy)*i_w + n*Sx+2] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx+1] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx+1];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx+2] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx+2];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx+1] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx+1];
+        out[o*o_w*o_h + m*o_w + n] +=
+            img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx+2] * 
+            weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx+2];
+    }
     // __syncthreads();
 
     // out[o*o_w*o_h + m*o_w + n] = result;
@@ -49,11 +82,39 @@ __global__ void gpu_conv(float * img, float * weight, float * out, int i_w, int 
 
     // for( o=g*(o_d/group);o<(g+1)*(o_d/group);o++) 
         for( i=g*(i_d/group);i<(g+1)*(i_d/group);i++) 
-            for(int k = 0; k < Ky; k++) 
-                for(int l = 0; l < Kx; l++)
-                    out[o*o_w*o_h + m*o_w + n] += 
-                        img[i*i_h*i_w + (m*Sy+k)*i_w + n*Sx+l] * 
-                        weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + k*Kx + l];
+            if (Kx == 1) {
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy)*i_w + n*Sx] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w];
+            } else {
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy)*i_w + n*Sx] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy)*i_w + n*Sx+1] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 1];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy)*i_w + n*Sx+2] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx+1] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx+1];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+1)*i_w + n*Sx+2] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + Kx+2];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx+1] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx+1];
+                out[o*o_w*o_h + m*o_w + n] +=
+                    img[i*i_h*i_w + (m*Sy+2)*i_w + n*Sx+2] * 
+                    weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + 2*Kx+2];
+            }
         
     
 }
