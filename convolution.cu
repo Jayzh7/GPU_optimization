@@ -3,7 +3,60 @@
 #include <stdio.h>
 #include <math.h>
 #include "logging.h"
+/*
+The maximum number of threads in the block is limited to 1024. This is the product of whatever your threadblock dimensions are (x*y*z). For example (32,32,1) creates a block of 1024 threads. (33,32,1) is not legal, since 33*32*1 > 1024.
+grid
+x: 2^31 - 1
+y,z: 65535
+thread
+x,y: 1024
+z: 64
 
+960
+1000
+1280
+12544
+*/
+__global__ void matrixMul(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h, int i_d, int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group) {
+    
+    unsigned int m = blockIdx.y*blockDim.y + threadIdx.y;
+    unsigned int n = blockIdx.x*blockDim.x + threadIdx.x;
+   
+    // __shared__ float result;
+    // result = out[o*o_w*o_h + m*o_w + n];
+
+//    __syncthreads();
+
+    for(int k = 0; k < Ky; k++) 
+        for(int l = 0; l < Kx; l++)
+            //  result += 
+            out[o*o_w*o_h + m*o_w + n] +=
+                img[i*i_h*i_w + (m*Sy+k)*i_w + n*Sx+l] * 
+                weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + k*Kx + l];
+    
+    // __syncthreads();
+
+    // out[o*o_w*o_h + m*o_w + n] = result;
+}
+    
+__global__ void gpu_conv(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h,  int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group, int o_d, int i_d) {
+    g = blockIdx.y;
+    o = g*(o_d/group)+blockIdx.x;
+    // i = g*(i_d/group)+blockIdx.x;
+
+    int m = threadIdx.y;
+    int n = threadIdx.x;
+
+    // for( o=g*(o_d/group);o<(g+1)*(o_d/group);o++) 
+        for( i=g*(i_d/group);i<(g+1)*(i_d/group);i++) 
+            for(int k = 0; k < Ky; k++) 
+                for(int l = 0; l < Kx; l++)
+                    out[o*o_w*o_h + m*o_w + n] += 
+                        img[i*i_h*i_w + (m*Sy+k)*i_w + n*Sx+l] * 
+                        weight[o*w_w*w_h + (i-(g*(i_d/group)))*w_w + k*Kx + l];
+        
+    
+}
 //add padding to blob
 BLOB* pad(BLOB* in, int pad){
 
@@ -111,16 +164,53 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
     //load weights
     BLOB* w = load_weights(in, p);
 
-    //perform convolution
-    for(int g=0;g<p->group;g++)
-        for(int o=g*(out->d/p->group);o<(g+1)*(out->d/p->group);o++)
-            for(int i=g*(in->d/p->group);i<(g+1)*(in->d/p->group);i++)
-                for(int m=0;m<out->h;m++)
-                    for(int n=0;n<out->w;n++)
-                        for(int k=0;k<Ky;k++)
-                            for(int l=0;l<Kx;l++)
-                                //note: absolute starting i is subtracted for the weights, see load_weights function for more info
-                                blob_data(out,o,m,n)+=blob_data(in, i, m*p->Sy+k, n*p->Sx+l) * blob_data(w, o, i-(g*(in->d/p->group)), k*Kx + l);
+    float *in_gpu, *w_gpu, *out_gpu;
+    dim3 block, grid;
+
+    blob2gpu(in_gpu, in);
+    blob2gpu(w_gpu, w);
+    // Allocs memory for the output of the conv in the ouput
+    cudaCheckError(cudaMalloc(&out_gpu, blob_bytes(out)));
+    blob2gpu(out_gpu, out);
+
+    if(out->w*out->h > 1023){
+        grid = dim3(4, 4, 1);
+        block = dim3(out->w/4, out->h/4);
+                
+        int o, g, i;
+        //perform convolution
+        for( g=0;g<p->group;g++) {
+            for( o=g*(out->d/p->group);o<(g+1)*(out->d/p->group);o++) {
+                for( i=g*(in->d/p->group);i<(g+1)*(in->d/p->group);i++) {
+                    matrixMul<<<grid, block>>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, in->d, g, o, i, Kx, Ky, p->Sx, p->Sy, p->group);
+                }
+            }
+        }
+    }
+    else{
+        // grid = dim3(in->d/p->group, out->d/p->group, p->group);
+        block = dim3(out->w, out->h);
+        grid = dim3(out->d/p->group, p->group);
+        int o, g, i;
+        // for( g=0;g<p->group;g++) {/
+            gpu_conv <<< grid, block >>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, g, o, i, Kx, Ky, p->Sx, p->Sy, p->group, out->d, in->d);
+        // }
+    }
+
+    gpu2blob(out, out_gpu);
+
+    cudaCheckError(cudaFree(in_gpu));
+    cudaCheckError(cudaFree(w_gpu));
+
+    // for(int g=0;g<p->group;g++)
+    //     for(int o=g*(out->d/p->group);o<(g+1)*(out->d/p->group);o++)
+    //         for(int i=g*(in->d/p->group);i<(g+1)*(in->d/p->group);i++)
+    //             for(int m=0;m<out->h;m++)
+    //                 for(int n=0;n<out->w;n++)
+    //                     for(int k=0;k<Ky;k++)
+    //                         for(int l=0;l<Kx;l++)
+    //                             //note: absolute starting i is subtracted for the weights, see load_weights function for more info
+    //                             blob_data(out,o,m,n)+=blob_data(in, i, m*p->Sy+k, n*p->Sx+l) * blob_data(w, o, i-(g*(in->d/p->group)), k*Kx + l);
 
     //free weights
     blob_free(w);
