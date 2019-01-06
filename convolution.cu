@@ -17,10 +17,6 @@ z: 64
 1280
 12544
 */
-__global__ void gpu_dummy(){
-
-}
-
 __global__ void gpu_conv_1(float * img, float * weight, float * out, int i_w, int i_h, int w_w, int w_h, int o_w, int o_h, int i_d, int g, int o, int i, int Kx, int Ky, int Sx, int Sy, int group) {
     
     unsigned int m = blockIdx.y*blockDim.y + threadIdx.y;
@@ -188,8 +184,6 @@ float* load_1d(const char* fname, size_t num){
 
 //convolution, NOTE: destructive of BLOB* in. duplicate if further required!
 BLOB* convolution(BLOB* input, conv_param_t* p){
-
-    gpu_dummy<<<1,1>>>();
     //use local pointer
     BLOB* in = input;
 
