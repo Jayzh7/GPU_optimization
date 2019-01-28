@@ -168,6 +168,8 @@ float* load_1d(const char* fname, size_t num){
 BLOB* convolution(BLOB* input, conv_param_t* p){
     //use local pointer
     BLOB* in = input;
+    BLOB* out;
+    static bool output_reuse = false;
 
     //padding of input if required
     if(p->pad!=0)
@@ -180,7 +182,7 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
     //create blob to hold output
     int height=(int)floor(((float)in->h - (float)Ky)/(float)p->Sy)+1;
     int width =(int)floor(((float)in->w - (float)Kx)/(float)p->Sx)+1;
-    BLOB* out;
+    
 
     //load bias if required
     if(p->bias==NULL){
@@ -206,12 +208,20 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
     //load weights
     BLOB* w = load_weights(in, p);
 
-    float *in_gpu, *w_gpu, *out_gpu;
+    float *in_gpu, *w_gpu;
+    static float *out_gpu;
     dim3 block, grid;
 
-    blob2gpu(in_gpu, in);
+    if (!output_reuse){
+        blob2gpu(in_gpu, in);
+    }
+    else{
+        in_gpu = out_gpu;
+    }
+    
     blob2gpu(w_gpu, w);
     // Allocs memory for the output of the conv in the ouput
+    out_gpu = 
     cudaCheckError(cudaMalloc(&out_gpu, blob_bytes(out)));
     blob2gpu(out_gpu, out);
 
@@ -233,15 +243,21 @@ BLOB* convolution(BLOB* input, conv_param_t* p){
         block = dim3(out->w, out->h);
         grid = dim3(out->d/p->group, p->group);
         // for( g=0;g<p->group;g++) {/
-            gpu_conv_2 <<< grid, block >>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, Kx, Ky, p->Sx, p->Sy, p->group, out->d, in->d);
+        gpu_conv_2 <<< grid, block >>> (in_gpu, w_gpu, out_gpu, in->w , in->h, w->w , w->h, out->w, out->h, Kx, Ky, p->Sx, p->Sy, p->group, out->d, in->d);
         // }
     }
 
     gpu2blob(out, out_gpu);
 
-    cudaCheckError(cudaFree(in_gpu));
-    cudaCheckError(cudaFree(w_gpu));
+    if (!output_reuse){
+        cudaCheckError(cudaFree(in_gpu));
+    }
+    else{
+        output_reuse = false;
+    }
 
+    cudaCheckError(cudaFree(w_gpu));
+    output_reuse = true;
     // for(int g=0;g<p->group;g++)
     //     for(int o=g*(out->d/p->group);o<(g+1)*(out->d/p->group);o++)
     //         for(int i=g*(in->d/p->group);i<(g+1)*(in->d/p->group);i++)
